@@ -10,6 +10,7 @@ from post_training_toolkit.models import run_diagnostics, run_heuristics, Insigh
 from post_training_toolkit.core import (
     MetricCollector, MetricRegistry, MetricType, MetricInfo,
     DiagnosticContext, DiagnosticContextBuilder,
+    Finding, heuristic, run_context_heuristics,
 )
 from post_training_toolkit.core.sensors import TrainingPhase
 

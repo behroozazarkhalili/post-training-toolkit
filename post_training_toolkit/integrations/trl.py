@@ -884,6 +884,17 @@ class DiagnosticsCallback(TrainerCallback):
             except Exception:
                 pass
 
+        # Run context-aware heuristics (Phase 3) — parallel pipeline
+        if self._latest_context is not None:
+            try:
+                from post_training_toolkit.core.heuristic_registry import run_context_heuristics
+                ctx_findings = run_context_heuristics(self._latest_context)
+                if ctx_findings:
+                    ctx_insights = [f.to_insight() for f in ctx_findings]
+                    self._handle_live_insights(ctx_insights, step, control)
+            except Exception:
+                pass
+
         if self.verbose and self._is_main:
             print(f"[DiagnosticsCallback] Step {step} ({self._trainer_type}): {list(metrics.keys())}")
 

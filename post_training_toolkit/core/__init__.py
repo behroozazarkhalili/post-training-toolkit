@@ -7,6 +7,12 @@ from post_training_toolkit.core.metric_registry import (
 )
 from post_training_toolkit.core.metric_collector import MetricCollector
 from post_training_toolkit.core.context import DiagnosticContext, DiagnosticContextBuilder
+from post_training_toolkit.core.finding import Finding
+from post_training_toolkit.core.heuristic_registry import (
+    heuristic,
+    HeuristicSpec,
+    run_context_heuristics,
+)
 
 __all__ = [
     "MetricType",
@@ -15,4 +21,8 @@ __all__ = [
     "MetricCollector",
     "DiagnosticContext",
     "DiagnosticContextBuilder",
+    "Finding",
+    "heuristic",
+    "HeuristicSpec",
+    "run_context_heuristics",
 ]
