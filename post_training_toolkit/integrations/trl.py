@@ -12,6 +12,7 @@ from transformers.training_args import TrainingArguments
 
 from post_training_toolkit.core.metric_collector import MetricCollector
 from post_training_toolkit.core.metric_registry import MetricRegistry
+from post_training_toolkit.core.context import DiagnosticContext, DiagnosticContextBuilder
 
 from post_training_toolkit.models.artifacts import (
     RunArtifactManager,
@@ -179,6 +180,7 @@ class DiagnosticsCallback(TrainerCallback):
         custom_alerts: Optional[List[str]] = None,
         custom_heuristics_dir: Optional[str | Path] = None,
         disable_yaml_heuristics: bool = False,
+        enable_sensors: bool = True,
         log_path: Optional[str | Path] = None,
     ):
         if log_path is not None:
@@ -220,6 +222,10 @@ class DiagnosticsCallback(TrainerCallback):
             max_history=self._max_history_size,
             registry=self._metric_registry,
         )
+        self._context_builder: Optional[DiagnosticContextBuilder] = (
+            DiagnosticContextBuilder() if enable_sensors else None
+        )
+        self._latest_context: Optional[DiagnosticContext] = None
         self._warned_issues: Set[str] = set()
         
         self.save_git_diff = save_git_diff
@@ -865,6 +871,18 @@ class DiagnosticsCallback(TrainerCallback):
             except Exception as e:
                 if self.verbose:
                     print(f"[DiagnosticsCallback] Live heuristics failed: {e}")
+
+        # Build diagnostic context (sensors) — parallel to heuristics, never breaks training
+        if self._context_builder is not None and self._collector.num_steps >= 20:
+            try:
+                self._latest_context = self._context_builder.build(
+                    df=self._collector.dataframe,
+                    registry=self._metric_registry,
+                    step=step,
+                    trainer_type=self._trainer_type,
+                )
+            except Exception:
+                pass
 
         if self.verbose and self._is_main:
             print(f"[DiagnosticsCallback] Step {step} ({self._trainer_type}): {list(metrics.keys())}")

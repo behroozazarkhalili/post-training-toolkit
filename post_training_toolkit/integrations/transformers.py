@@ -11,6 +11,7 @@ from transformers.training_args import TrainingArguments
 
 from post_training_toolkit.core.metric_collector import MetricCollector
 from post_training_toolkit.core.metric_registry import MetricRegistry
+from post_training_toolkit.core.context import DiagnosticContext, DiagnosticContextBuilder
 from post_training_toolkit.models.heuristics import run_heuristics, Insight, TrainerType
 from post_training_toolkit.models.artifacts import RunArtifactManager, is_main_process
 from post_training_toolkit.models.profiling import (
@@ -51,6 +52,7 @@ class TransformersCallback(TrainerCallback):
         custom_heuristics_dir: Optional[str | Path] = None,
         disable_yaml_heuristics: bool = False,
         metric_registry: Optional[MetricRegistry] = None,
+        enable_sensors: bool = True,
     ) -> None:
         self.run_dir = Path(run_dir)
         self.log_every_n_steps = log_every_n_steps
@@ -69,6 +71,11 @@ class TransformersCallback(TrainerCallback):
         self._collector = MetricCollector(
             max_history=max_history, registry=self._registry
         )
+
+        self._context_builder: Optional[DiagnosticContextBuilder] = (
+            DiagnosticContextBuilder() if enable_sensors else None
+        )
+        self._latest_context: Optional[DiagnosticContext] = None
 
         self._initialized = False
         self._is_main = True
@@ -192,6 +199,18 @@ class TransformersCallback(TrainerCallback):
             except Exception as e:
                 if self.verbose:
                     print(f"[TransformersCallback] Live heuristics failed: {e}")
+
+        # Build diagnostic context (sensors) — parallel to heuristics, never breaks training
+        if self._context_builder is not None and self._collector.num_steps >= 20:
+            try:
+                self._latest_context = self._context_builder.build(
+                    df=self._collector.dataframe,
+                    registry=self._registry,
+                    step=step,
+                    trainer_type="generic",
+                )
+            except Exception:
+                pass
 
     def on_step_begin(
         self,

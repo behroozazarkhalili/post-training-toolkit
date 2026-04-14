@@ -7,7 +7,11 @@ from post_training_toolkit.integrations import (
     TransformersCallback,
 )
 from post_training_toolkit.models import run_diagnostics, run_heuristics, Insight, load_metrics
-from post_training_toolkit.core import MetricCollector, MetricRegistry, MetricType, MetricInfo
+from post_training_toolkit.core import (
+    MetricCollector, MetricRegistry, MetricType, MetricInfo,
+    DiagnosticContext, DiagnosticContextBuilder,
+)
+from post_training_toolkit.core.sensors import TrainingPhase
 
 from post_training_toolkit.models.artifacts import (
     RunArtifactManager,
