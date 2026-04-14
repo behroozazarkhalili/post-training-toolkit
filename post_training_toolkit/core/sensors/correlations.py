@@ -17,10 +17,12 @@ class CorrelationInfo:
 
     metric_a: str
     metric_b: str
-    correlation: float
+    correlation: float          # Pearson (linear)
     abs_correlation: float
     is_significant: bool
-    direction: str  # "positive", "negative", "none"
+    direction: str              # "positive", "negative", "none"
+    spearman: float = 0.0       # Spearman rank (captures non-linear monotonic)
+    correlation_change: float = 0.0  # Change between first/second half (decorrelation detection)
 
 
 class CorrelationTracker:
@@ -123,12 +125,27 @@ class CorrelationTracker:
         if np.isnan(corr):
             corr = 0.0
 
-        abs_corr = abs(corr)
-        is_sig = abs_corr >= self.significance_threshold
+        # Spearman rank correlation — captures non-linear monotonic relationships
+        spearman = float(combined["a"].corr(combined["b"], method="spearman"))
+        if np.isnan(spearman):
+            spearman = 0.0
 
-        if abs_corr < self.significance_threshold:
+        # Correlation change detection — compare first/second half
+        mid = len(combined) // 2
+        correlation_change = 0.0
+        if mid >= self.min_points:
+            first_corr = float(combined.iloc[:mid]["a"].corr(combined.iloc[:mid]["b"]))
+            second_corr = float(combined.iloc[mid:]["a"].corr(combined.iloc[mid:]["b"]))
+            if not (np.isnan(first_corr) or np.isnan(second_corr)):
+                correlation_change = second_corr - first_corr
+
+        # Use max of Pearson and Spearman for significance check
+        effective_corr = max(abs(corr), abs(spearman))
+        is_sig = effective_corr >= self.significance_threshold
+
+        if effective_corr < self.significance_threshold:
             direction = "none"
-        elif corr > 0:
+        elif corr > 0 or spearman > 0:
             direction = "positive"
         else:
             direction = "negative"
@@ -137,7 +154,9 @@ class CorrelationTracker:
             metric_a=name_a,
             metric_b=name_b,
             correlation=corr,
-            abs_correlation=abs_corr,
+            abs_correlation=abs(corr),
             is_significant=is_sig,
             direction=direction,
+            spearman=spearman,
+            correlation_change=correlation_change,
         )

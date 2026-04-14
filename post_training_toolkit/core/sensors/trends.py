@@ -30,6 +30,7 @@ class TrendInfo:
     r_squared: float
     recent_mean: float
     recent_std: float
+    ewma_slope: float = 0.0  # Slope computed on EWMA-smoothed series
 
     @property
     def confidence(self) -> float:
@@ -65,11 +66,13 @@ class TrendDetector:
         slope_threshold: float = 1e-4,
         oscillation_threshold: float = 0.3,
         min_points: int = 5,
+        ewma_span: int = 10,
     ) -> None:
         self.window = window
         self.slope_threshold = slope_threshold
         self.oscillation_threshold = oscillation_threshold
         self.min_points = min_points
+        self.ewma_span = ewma_span
 
     def analyze(
         self,
@@ -131,6 +134,15 @@ class TrendDetector:
         recent_std = float(recent.std())
         volatility = recent_std / (abs(recent_mean) + 1e-8)
 
+        # EWMA-smoothed slope — more responsive to recent changes
+        ewma_smoothed = recent.ewm(span=self.ewma_span, min_periods=3).mean()
+        if len(ewma_smoothed.dropna()) >= self.min_points:
+            ewma_clean = ewma_smoothed.dropna().reset_index(drop=True)
+            x_ewma = np.arange(len(ewma_clean), dtype=float)
+            ewma_slope = float(linregress(x_ewma, ewma_clean.values.astype(float)).slope)
+        else:
+            ewma_slope = slope
+
         direction = self._classify_direction(slope, r_squared, volatility)
 
         return TrendInfo(
@@ -142,6 +154,7 @@ class TrendDetector:
             r_squared=r_squared,
             recent_mean=recent_mean,
             recent_std=recent_std,
+            ewma_slope=ewma_slope,
         )
 
     def _classify_direction(
