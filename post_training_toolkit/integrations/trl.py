@@ -1235,11 +1235,31 @@ class DiagnosticsCallback(TrainerCallback):
                         print(f"     • {insight.message}")
                     if len(low) > 3:
                         print(f"     • ... and {len(low) - 3} more")
-                
+
                 print(f"\n--- Recommendations ---")
                 recommendations = self._get_recommendations(insights)
                 for rec in recommendations:
                     print(f"  → {rec}")
+
+            # Phase 4: Show training phase and top anomalies from sensors
+            if self._latest_context is not None:
+                ctx = self._latest_context
+                if hasattr(ctx, "phase") and ctx.phase is not None:
+                    print(f"\n--- Training Phase ---")
+                    print(f"  Phase: {ctx.current_phase.value.upper()} "
+                          f"(confidence: {ctx.phase.confidence:.0%})")
+
+                if hasattr(ctx, "anomalies") and ctx.anomalies:
+                    anomalous = [(n, a) for n, a in ctx.anomalies.items() if a.is_anomalous]
+                    if anomalous:
+                        print(f"\n--- Anomalous Metrics ({len(anomalous)}) ---")
+                        for name, info in sorted(anomalous, key=lambda x: abs(x[1].current_z_score), reverse=True)[:5]:
+                            parts = [f"z={info.current_z_score:.1f}"]
+                            if info.change_point_detected:
+                                parts.append(f"change-point@{info.change_point_step}")
+                            if info.variance_shift_detected:
+                                parts.append(f"var-shift={info.variance_ratio:.1f}x")
+                            print(f"  • {name}: {', '.join(parts)}")
         else:
             print("\n  No metrics recorded")
         

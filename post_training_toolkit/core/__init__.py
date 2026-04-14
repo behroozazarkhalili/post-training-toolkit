@@ -13,6 +13,11 @@ from post_training_toolkit.core.heuristic_registry import (
     HeuristicSpec,
     run_context_heuristics,
 )
+from post_training_toolkit.core.synthesizer import (
+    FindingSynthesizer,
+    DiagnosisGroup,
+    SynthesizedReport,
+)
 
 __all__ = [
     "MetricType",
@@ -25,4 +30,7 @@ __all__ = [
     "heuristic",
     "HeuristicSpec",
     "run_context_heuristics",
+    "FindingSynthesizer",
+    "DiagnosisGroup",
+    "SynthesizedReport",
 ]

@@ -279,14 +279,16 @@ def render_report(df: pd.DataFrame, insights: List[Insight], out_path: Path,
                   plots_dir: Optional[Path] = None,
                   behavior_drift: Optional[Dict[str, Any]] = None,
                   checkpoint_recommendation: Optional[Dict[str, Any]] = None,
-                  postmortem: Optional[Dict[str, Any]] = None) -> None:
+                  postmortem: Optional[Dict[str, Any]] = None,
+                  diagnostic_ctx: Optional[Any] = None,
+                  findings: Optional[List[Any]] = None) -> None:
     env = Environment(
         loader=FileSystemLoader(str(_TEMPLATES_DIR)),
         autoescape=select_autoescape(enabled_extensions=("html", "xml"))
     )
     template = env.get_template("report_template.md")
     summary = summarize_run(df, trainer_type)
-    
+
     status = "Stable"
     if postmortem:
         status = f"Crashed ({postmortem.get('exit_reason', 'unknown')})"
@@ -294,7 +296,7 @@ def render_report(df: pd.DataFrame, insights: List[Insight], out_path: Path,
         status = "Unstable"
     elif any(ins.severity == "medium" for ins in insights):
         status = "Partially unstable"
-    
+
     context: Dict[str, Any] = {
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "trainer_type": trainer_type.upper(),
@@ -312,10 +314,114 @@ def render_report(df: pd.DataFrame, insights: List[Insight], out_path: Path,
         "checkpoint_recommendation": checkpoint_recommendation,
         "postmortem": postmortem,
     }
-    
+
+    # Phase 4: Add sensor data from DiagnosticContext (if available)
+    if diagnostic_ctx is not None:
+        context.update(_build_sensor_context(diagnostic_ctx))
+
+    # Phase 4: Add synthesized findings report (if available)
+    if findings:
+        try:
+            from post_training_toolkit.core.synthesizer import FindingSynthesizer
+            synth = FindingSynthesizer()
+            report = synth.synthesize(findings, diagnostic_ctx)
+            context["synthesis"] = {
+                "overall_status": report.overall_status,
+                "phase_summary": report.phase_summary,
+                "trend_summary": report.trend_summary,
+                "total_findings": report.total_findings,
+                "high_count": report.high_count,
+                "medium_count": report.medium_count,
+                "low_count": report.low_count,
+                "groups": [
+                    {
+                        "title": g.title,
+                        "combined_severity": g.combined_severity,
+                        "combined_recommendation": g.combined_recommendation,
+                        "root_cause_hypothesis": g.root_cause_hypothesis,
+                        "findings": [
+                            {
+                                "severity": f.severity,
+                                "message": f.message,
+                                "confidence": f.confidence,
+                                "recommendation": f.recommendation,
+                                "reference": f.reference,
+                            }
+                            for f in g.findings
+                        ],
+                    }
+                    for g in report.groups
+                ],
+            }
+        except Exception:
+            pass
+
     md = template.render(**context)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(md, encoding="utf-8")
+
+
+def _build_sensor_context(ctx: Any) -> Dict[str, Any]:
+    """Extract sensor data from DiagnosticContext for Jinja2 template."""
+    result: Dict[str, Any] = {}
+
+    # Phase info
+    if hasattr(ctx, "phase") and ctx.phase is not None:
+        result["phase_info"] = {
+            "phase": ctx.current_phase.value.upper(),
+            "confidence": f"{ctx.phase.confidence:.0%}",
+            "loss_slope": f"{ctx.phase.loss_slope:.6f}" if ctx.phase.loss_slope else None,
+        }
+
+    # Trend table
+    if hasattr(ctx, "trends") and ctx.trends:
+        trend_table = []
+        for name, t in sorted(ctx.trends.items()):
+            if name == "step":
+                continue
+            trend_table.append({
+                "metric": name,
+                "direction": t.direction.value,
+                "slope": f"{t.slope:.6f}",
+                "ewma_slope": f"{t.ewma_slope:.6f}",
+                "volatility": f"{t.volatility:.3f}",
+                "r_squared": f"{t.r_squared:.3f}",
+            })
+        if trend_table:
+            result["trend_table"] = trend_table
+
+    # Anomaly table
+    if hasattr(ctx, "anomalies") and ctx.anomalies:
+        anomaly_table = []
+        for name, a in sorted(ctx.anomalies.items()):
+            if a.is_anomalous:
+                anomaly_table.append({
+                    "metric": name,
+                    "z_score": f"{a.current_z_score:.2f}",
+                    "cusum": "Yes" if a.change_point_detected else "No",
+                    "variance": f"{a.variance_ratio:.2f}x" if a.variance_shift_detected else "Normal",
+                    "ewma": "Yes" if a.ewma_anomalous else "No",
+                })
+        if anomaly_table:
+            result["anomaly_table"] = anomaly_table
+
+    # Correlation table
+    if hasattr(ctx, "correlations") and ctx.correlations:
+        correlation_table = []
+        for (a, b), c in sorted(ctx.correlations.items()):
+            if c.is_significant:
+                correlation_table.append({
+                    "metric_a": a,
+                    "metric_b": b,
+                    "pearson": f"{c.correlation:.3f}",
+                    "spearman": f"{c.spearman:.3f}",
+                    "direction": c.direction,
+                    "change": f"{c.correlation_change:+.3f}",
+                })
+        if correlation_table:
+            result["correlation_table"] = correlation_table
+
+    return result
 
 def run_diagnostics(input_path: Path, reports_dir: Path, make_plots: bool = True,
                     trainer_type: Optional[str] = None) -> Path:
@@ -358,7 +464,23 @@ def run_diagnostics(input_path: Path, reports_dir: Path, make_plots: bool = True
             pass
     
     postmortem = load_postmortem(run_dir)
-    
+
+    # Phase 4: Build DiagnosticContext and run context-aware heuristics
+    diagnostic_ctx = None
+    ctx_findings = None
+    try:
+        from post_training_toolkit.core.context import DiagnosticContextBuilder
+        from post_training_toolkit.core.metric_registry import MetricRegistry
+        from post_training_toolkit.core.heuristic_registry import run_context_heuristics
+
+        registry = MetricRegistry()
+        registry.auto_register([c for c in df.columns if c != "step"])
+        builder = DiagnosticContextBuilder()
+        diagnostic_ctx = builder.build(df, registry, step=int(df["step"].max()), trainer_type=effective_trainer_type)
+        ctx_findings = run_context_heuristics(diagnostic_ctx)
+    except Exception:
+        pass
+
     report_name = input_path.stem if input_path.is_file() else "run"
     out_path = reports_dir / f"{report_name}_report.md"
     render_report(
@@ -367,8 +489,10 @@ def run_diagnostics(input_path: Path, reports_dir: Path, make_plots: bool = True
         behavior_drift=behavior_drift,
         checkpoint_recommendation=checkpoint_recommendation,
         postmortem=postmortem,
+        diagnostic_ctx=diagnostic_ctx,
+        findings=ctx_findings,
     )
-    
+
     return out_path
 
 def _plot_ppo_metrics(df: pd.DataFrame, plots_dir: Path) -> None:

@@ -72,6 +72,72 @@ Generated: {{ generated_at }}
 No significant issues detected. Training appears stable.
 {% endif %}
 
+{% if phase_info %}
+### Training Phase
+**Current Phase:** {{ phase_info.phase }} (confidence: {{ phase_info.confidence }})
+{%- if phase_info.loss_slope %}
+- Loss slope: {{ phase_info.loss_slope }}
+{%- endif %}
+{% endif %}
+
+{% if trend_table %}
+### Metric Trends
+| Metric | Direction | Slope | EWMA Slope | Volatility | R² |
+|--------|-----------|-------|------------|------------|-----|
+{% for t in trend_table %}
+| {{ t.metric }} | {{ t.direction }} | {{ t.slope }} | {{ t.ewma_slope }} | {{ t.volatility }} | {{ t.r_squared }} |
+{% endfor %}
+{% endif %}
+
+{% if anomaly_table %}
+### Anomalies Detected
+| Metric | Z-Score | CUSUM | Variance Shift | EWMA Breach |
+|--------|---------|-------|----------------|-------------|
+{% for a in anomaly_table %}
+| {{ a.metric }} | {{ a.z_score }} | {{ a.cusum }} | {{ a.variance }} | {{ a.ewma }} |
+{% endfor %}
+{% endif %}
+
+{% if correlation_table %}
+### Significant Metric Correlations
+| Metric A | Metric B | Pearson | Spearman | Direction | Change |
+|----------|----------|---------|----------|-----------|--------|
+{% for c in correlation_table %}
+| {{ c.metric_a }} | {{ c.metric_b }} | {{ c.pearson }} | {{ c.spearman }} | {{ c.direction }} | {{ c.change }} |
+{% endfor %}
+{% endif %}
+
+{% if synthesis %}
+### Diagnosis Summary
+**Status:** {{ synthesis.overall_status }} | **Findings:** {{ synthesis.total_findings }} ({{ synthesis.high_count }} high, {{ synthesis.medium_count }} medium, {{ synthesis.low_count }} low)
+{%- if synthesis.phase_summary %}
+- {{ synthesis.phase_summary }}
+{%- endif %}
+{%- if synthesis.trend_summary %}
+- {{ synthesis.trend_summary }}
+{%- endif %}
+
+{% for group in synthesis.groups %}
+#### {{ group.title }} [{{ group.combined_severity|upper }}]
+{% for f in group.findings %}
+- [{{ f.severity|upper }}] {{ f.message }}{% if f.confidence != 1.0 %} (confidence: {{ "%.0f"|format(f.confidence * 100) }}%){% endif %}
+{%- if f.recommendation %}
+  - **Action:** {{ f.recommendation }}
+{%- endif %}
+{%- if f.reference %}
+  - *Ref: {{ f.reference }}*
+{%- endif %}
+{% endfor %}
+{%- if group.root_cause_hypothesis %}
+> **Hypothesis:** {{ group.root_cause_hypothesis }}
+{%- endif %}
+{%- if group.combined_recommendation %}
+> **Combined action:** {{ group.combined_recommendation }}
+{%- endif %}
+
+{% endfor %}
+{% endif %}
+
 {% if behavior_drift %}
 ### Behavior Drift Analysis
 **Overall Drift:** {{ behavior_drift.severity|upper }}
