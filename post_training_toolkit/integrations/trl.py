@@ -10,6 +10,9 @@ from typing import Any, Callable, Dict, List, Optional, Set
 from transformers import TrainerCallback, TrainerState, TrainerControl
 from transformers.training_args import TrainingArguments
 
+from post_training_toolkit.core.metric_collector import MetricCollector
+from post_training_toolkit.core.metric_registry import MetricRegistry
+
 from post_training_toolkit.models.artifacts import (
     RunArtifactManager,
     is_main_process,
@@ -211,8 +214,12 @@ class DiagnosticsCallback(TrainerCallback):
         
         self.enable_live_warnings = enable_live_warnings
         self.live_warning_interval = live_warning_interval
-        self._metrics_history: List[Dict[str, Any]] = []
         self._max_history_size = 200
+        self._metric_registry = MetricRegistry()
+        self._collector = MetricCollector(
+            max_history=self._max_history_size,
+            registry=self._metric_registry,
+        )
         self._warned_issues: Set[str] = set()
         
         self.save_git_diff = save_git_diff
@@ -264,6 +271,14 @@ class DiagnosticsCallback(TrainerCallback):
         self._is_distributed = False
         self._world_size = 1
         self._rank = 0
+
+    @property
+    def _metrics_history(self) -> List[Dict[str, Any]]:
+        return self._collector.history
+
+    @_metrics_history.setter
+    def _metrics_history(self, value: List[Dict[str, Any]]) -> None:
+        self._collector.history = value
 
     @property
     def log_path(self) -> Path:
@@ -664,17 +679,12 @@ class DiagnosticsCallback(TrainerCallback):
             control.should_training_stop = True
 
     def _run_live_heuristics(self, step: int, metrics: Dict[str, Any]) -> List[Insight]:
-        import pandas as pd
+        self._collector.collect(step, metrics)
 
-        self._metrics_history.append({"step": step, **metrics})
-
-        if len(self._metrics_history) > self._max_history_size:
-            self._metrics_history = self._metrics_history[-self._max_history_size:]
-
-        if len(self._metrics_history) < 10:
+        if self._collector.num_steps < 10:
             return []
 
-        df = pd.DataFrame(self._metrics_history)
+        df = self._collector.dataframe
 
         custom_yaml_dirs = None
         if self._custom_heuristics_dir:
@@ -843,6 +853,11 @@ class DiagnosticsCallback(TrainerCallback):
             self._postmortem_recorder.check_for_nan(metrics)
             self._postmortem_recorder.check_for_divergence(metrics)
         
+        # Always collect metrics into the collector
+        if not (self.enable_live_warnings and step % self.live_warning_interval == 0):
+            # On non-heuristic steps, just collect (heuristic steps collect inside _run_live_heuristics)
+            self._collector.collect(step, metrics)
+
         if self.enable_live_warnings and step % self.live_warning_interval == 0:
             try:
                 insights = self._run_live_heuristics(step, metrics)
@@ -850,10 +865,6 @@ class DiagnosticsCallback(TrainerCallback):
             except Exception as e:
                 if self.verbose:
                     print(f"[DiagnosticsCallback] Live heuristics failed: {e}")
-        else:
-            self._metrics_history.append({"step": step, **metrics})
-            if len(self._metrics_history) > self._max_history_size:
-                self._metrics_history = self._metrics_history[-self._max_history_size:]
 
         if self.verbose and self._is_main:
             print(f"[DiagnosticsCallback] Step {step} ({self._trainer_type}): {list(metrics.keys())}")

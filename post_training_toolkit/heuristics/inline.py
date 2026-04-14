@@ -102,7 +102,7 @@ def validate_inline_alert(alert_string: str) -> tuple[bool, Optional[str]]:
         )
 
     trainer = match.group("trainer").lower()
-    valid_trainers = {"dpo", "ppo", "sft", "orpo", "kto", "cpo", "grpo", "common", "all"}
+    valid_trainers = {"dpo", "ppo", "sft", "orpo", "kto", "cpo", "grpo", "common", "all", "generic", "unknown"}
     if trainer not in valid_trainers:
         return False, f"Invalid trainer '{trainer}'. Must be one of: {valid_trainers}"
 

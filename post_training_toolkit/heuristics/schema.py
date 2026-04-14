@@ -21,7 +21,7 @@ class YAMLHeuristic:
         if self.severity not in valid_severities:
             raise ValueError(f"Invalid severity '{self.severity}'. Must be one of: {valid_severities}")
 
-        valid_trainers = {"dpo", "ppo", "sft", "orpo", "kto", "cpo", "grpo", "common", "all"}
+        valid_trainers = {"dpo", "ppo", "sft", "orpo", "kto", "cpo", "grpo", "common", "all", "generic", "unknown"}
         for trainer in self.trainers:
             if trainer not in valid_trainers:
                 raise ValueError(f"Invalid trainer '{trainer}'. Must be one of: {valid_trainers}")

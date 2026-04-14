@@ -1,6 +1,13 @@
 
-from post_training_toolkit.integrations import DiagnosticsCallback, TrainerType
+from post_training_toolkit.integrations import (
+    DiagnosticsCallback,
+    PTTCallback,
+    PostTrainingCallback,
+    TrainerType,
+    TransformersCallback,
+)
 from post_training_toolkit.models import run_diagnostics, run_heuristics, Insight, load_metrics
+from post_training_toolkit.core import MetricCollector, MetricRegistry, MetricType, MetricInfo
 
 from post_training_toolkit.models.artifacts import (
     RunArtifactManager,
