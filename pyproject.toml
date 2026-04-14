@@ -98,11 +98,11 @@ ptt-validate-resume = "post_training_toolkit.cli:validate_resume_cli"
 ptt-agent-diagnose = "post_training_toolkit.cli:agent_diagnose_cli"
 
 [project.urls]
-Homepage = "https://github.com/your-org/post-training-toolkit"
-Documentation = "https://github.com/your-org/post-training-toolkit#readme"
-Repository = "https://github.com/your-org/post-training-toolkit"
-Issues = "https://github.com/your-org/post-training-toolkit/issues"
-Changelog = "https://github.com/your-org/post-training-toolkit/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/behroozazarkhalili/post-training-toolkit"
+Documentation = "https://github.com/behroozazarkhalili/post-training-toolkit#readme"
+Repository = "https://github.com/behroozazarkhalili/post-training-toolkit"
+Issues = "https://github.com/behroozazarkhalili/post-training-toolkit/issues"
+Changelog = "https://github.com/behroozazarkhalili/post-training-toolkit/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.sdist]
 include = [
