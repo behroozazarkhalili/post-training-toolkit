@@ -1,25 +1,22 @@
-# TODO: The maintainer of this repo has not yet edited this file
-
-**REPO OWNER**: Do you want Customer Service & Support (CSS) support for this product/project?
-
-- **No CSS support:** Fill out this template with information about how to file issues and get help.
-- **Yes CSS support:** Fill out an intake form at [aka.ms/onboardsupport](https://aka.ms/onboardsupport). CSS will work with/help you to determine next steps.
-- **Not sure?** Fill out an intake as though the answer were "Yes". CSS will help you decide.
-
-*Then remove this first heading from this SUPPORT.MD file before publishing your repo.*
-
 # Support
 
-## How to file issues and get help  
+## Getting help
 
-This project uses GitHub Issues to track bugs and feature requests. Please search the existing 
-issues before filing new issues to avoid duplicates.  For new issues, file your bug or 
-feature request as a new Issue.
+- **Bug reports and feature requests:** [GitHub Issues](https://github.com/behroozazarkhalili/post-training-toolkit/issues)
+- **Questions and discussions:** [GitHub Discussions](https://github.com/behroozazarkhalili/post-training-toolkit/discussions)
+- **Documentation:** [README.md](README.md)
 
-For help and questions about using this project, please **REPO MAINTAINER: INSERT INSTRUCTIONS HERE 
-FOR HOW TO ENGAGE REPO OWNERS OR COMMUNITY FOR HELP. COULD BE A STACK OVERFLOW TAG OR OTHER
-CHANNEL. WHERE WILL YOU HELP PEOPLE?**.
+## Before filing an issue
 
-## Microsoft Support Policy  
+1. Search [existing issues](https://github.com/behroozazarkhalili/post-training-toolkit/issues) to avoid duplicates
+2. Include your PTT version (`pip show post-training-toolkit`)
+3. Include a minimal reproducible example
+4. Include the full error traceback
 
-Support for this **PROJECT or PRODUCT** is limited to the resources listed above.
+## Useful information to include
+
+- Python version
+- PyTorch version
+- Transformers/TRL version
+- GPU type and CUDA version (if relevant)
+- Operating system

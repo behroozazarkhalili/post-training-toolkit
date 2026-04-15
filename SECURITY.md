@@ -1,14 +1,33 @@
-<!-- BEGIN MICROSOFT SECURITY.MD V1.0.0 BLOCK -->
+# Security Policy
 
-## Security
+## Reporting a Vulnerability
 
-Microsoft takes the security of our software products and services seriously, which
-includes all source code repositories in our GitHub organizations.
+If you discover a security vulnerability in Post-Training Toolkit, please report it responsibly.
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+**Do not open a public GitHub issue for security vulnerabilities.**
 
-For security reporting information, locations, contact information, and policies,
-please review the latest guidance for Microsoft repositories at
-[https://aka.ms/SECURITY.md](https://aka.ms/SECURITY.md).
+Instead, please report vulnerabilities by emailing the maintainer or using [GitHub's private vulnerability reporting](https://github.com/behroozazarkhalili/post-training-toolkit/security/advisories/new).
 
-<!-- END MICROSOFT SECURITY.MD BLOCK -->
+### What to include
+
+- Description of the vulnerability
+- Steps to reproduce
+- Potential impact
+- Suggested fix (if any)
+
+### Response timeline
+
+- **Acknowledgment:** within 48 hours
+- **Assessment:** within 1 week
+- **Fix or mitigation:** as soon as reasonably possible
+
+## Supported Versions
+
+| Version | Supported |
+|---------|-----------|
+| Latest  | Yes       |
+| < Latest | Best effort |
+
+## Scope
+
+This policy covers the `post-training-toolkit` Python package and its dependencies. It does not cover models, datasets, or training infrastructure that users bring.
