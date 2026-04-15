@@ -532,21 +532,201 @@ DiagnosticsCallback(
 
 ---
 
+## Examples: from simplest to most complex
+
+### 1. Zero-config (simplest)
+
+```python
+from post_training_toolkit import TransformersCallback
+trainer = Trainer(..., callbacks=[TransformersCallback()])
+trainer.train()
+# That's it. Metrics collected, anomalies detected, warnings printed.
+```
+
+### 2. TRL with auto-stop
+
+```python
+from post_training_toolkit import DiagnosticsCallback
+trainer = DPOTrainer(..., callbacks=[DiagnosticsCallback(stop_on_critical=True)])
+trainer.train()
+# Automatically stops if NaN, loss > 100, or high-severity heuristic fires.
+```
+
+### 3. Custom YAML heuristic
+
+```yaml
+# my_rules/custom_check.yaml
+name: reward_too_high
+trainers: [all]
+metric: reward_mean
+condition: "> 5.0"
+severity: high
+message: "Reward mean at {value:.2f} — possible reward hacking"
+```
+
+```python
+DiagnosticsCallback(custom_heuristics_dir="./my_rules")
+```
+
+### 4. Inline alerts (no files needed)
+
+```python
+DiagnosticsCallback(custom_alerts=[
+    "dpo: margin < 0.1 -> high: Margin collapsed below 0.1",
+    "all: kl > 0.5 -> medium: KL divergence above safe threshold",
+])
+```
+
+### 5. Standalone sensor analysis (no training loop)
+
+```python
+import pandas as pd
+from post_training_toolkit.core.sensors import TrendDetector, AnomalyDetector, CorrelationTracker
+
+df = pd.read_json("metrics.jsonl", lines=True)
+
+# Trends
+trends = TrendDetector(window=50).analyze(df)
+for name, t in trends.items():
+    print(f"{name}: {t.direction.value} (slope={t.slope:.6f}, R²={t.r_squared:.3f})")
+
+# Anomalies
+anomalies = AnomalyDetector().analyze(df)
+for name, a in anomalies.items():
+    if a.is_anomalous:
+        print(f"ANOMALY: {name} z={a.current_z_score:.1f}")
+
+# Mahalanobis multivariate
+result = AnomalyDetector().mahalanobis_multivariate(df, metrics=["loss", "reward", "kl"])
+print(f"Joint anomaly distance: {result.distance:.2f}")
+```
+
+### 6. Full DiagnosticContext for custom analysis
+
+```python
+from post_training_toolkit.core import DiagnosticContextBuilder, MetricRegistry, MetricType
+
+registry = MetricRegistry()
+registry.auto_register(list(df.columns))
+
+ctx = DiagnosticContextBuilder().build(df, registry, step=df["step"].max())
+
+# Training phase
+print(f"Phase: {ctx.current_phase.value} ({ctx.phase.confidence:.0%})")
+
+# Cross-metric correlations
+for (a, b), info in ctx.correlations.items():
+    if info.is_significant:
+        print(f"{a} <-> {b}: pearson={info.correlation:.2f}, spearman={info.spearman:.2f}")
+
+# Metrics by semantic type
+for name, series in ctx.get_metrics_of_type(MetricType.REWARD).items():
+    trend = ctx.get_trend(name)
+    print(f"{name}: {trend.direction.value}, anomalous={ctx.is_anomalous(name)}")
+```
+
+### 7. Custom @heuristic with full context (most complex)
+
+```python
+from post_training_toolkit import heuristic, Finding, TrainingPhase
+from post_training_toolkit.core import MetricType, DiagnosticContext
+from post_training_toolkit.core.sensors.trends import TrendDirection
+
+@heuristic(
+    name="my_custom_divergence_check",
+    requires={MetricType.LOSS: 1, MetricType.DIVERGENCE: 1},
+    phase=[TrainingPhase.LEARNING, TrainingPhase.CONVERGING],
+    severity="high",
+    min_steps=40,
+    reference="Internal training playbook",
+)
+def detect_loss_kl_divergence(ctx: DiagnosticContext) -> Finding | None:
+    """Custom heuristic: loss improving but KL exploding — unsustainable."""
+    losses = ctx.registry.get_by_type(MetricType.LOSS)
+    kls = ctx.registry.get_by_type(MetricType.DIVERGENCE)
+
+    for loss_name in losses:
+        loss_trend = ctx.get_trend(loss_name)
+        if not loss_trend or loss_trend.direction != TrendDirection.DECREASING:
+            continue
+
+        for kl_name in kls:
+            kl_trend = ctx.get_trend(kl_name)
+            if not kl_trend or kl_trend.direction != TrendDirection.INCREASING:
+                continue
+
+            # Check if KL growth rate exceeds loss improvement rate
+            kl_rate = abs(kl_trend.slope)
+            loss_rate = abs(loss_trend.slope)
+            if kl_rate > loss_rate * 5:
+                return Finding(
+                    type="my_custom_divergence_check",
+                    severity="high",
+                    message=(
+                        f"KL ({kl_name}) growing {kl_rate/loss_rate:.1f}x faster "
+                        f"than loss ({loss_name}) is improving"
+                    ),
+                    confidence=min(kl_trend.r_squared, loss_trend.r_squared),
+                    recommendation=(
+                        "Reduce learning rate or increase KL penalty. "
+                        "The model is drifting from reference without proportional benefit."
+                    ),
+                    evidence={
+                        "kl_slope": kl_trend.slope,
+                        "loss_slope": loss_trend.slope,
+                        "kl_anomalous": ctx.is_anomalous(kl_name),
+                        "phase": ctx.current_phase.value,
+                    },
+                    phase=ctx.current_phase,
+                )
+    return None
+```
+
+---
+
 ## Academic references
 
-The heuristics are backed by research:
+### Heuristic foundations
 
-| Paper | What PTT uses from it |
-|-------|----------------------|
-| [ODIN (arXiv:2402.07319)](https://arxiv.org/abs/2402.07319) | Reward-length correlation for reward hacking detection |
-| [DPO (arXiv:2305.18290)](https://arxiv.org/abs/2305.18290) | DPO loss at ln(2) detection, margin collapse |
-| [Entropy Ratio Clipping (arXiv:2512.05591)](https://arxiv.org/abs/2512.05591) | Entropy as stability signal |
-| [M-GRPO (arXiv:2512.13070)](https://arxiv.org/abs/2512.13070) | GRPO stability patterns |
-| [Open Problems in RLHF (arXiv:2307.15217)](https://arxiv.org/abs/2307.15217) | Catalog of RLHF failure modes |
-| [InfoRM (arXiv:2510.13694)](https://arxiv.org/abs/2510.13694) | Mahalanobis distance for reward hacking detection |
-| [EntroPIC (arXiv:2511.15248)](https://arxiv.org/abs/2511.15248) | Entropy stability monitoring |
-| Roberts (1959) | EWMA control charts |
-| Page (1954) | CUSUM change-point detection |
+| Paper | arXiv | PTT feature |
+|-------|-------|-------------|
+| Schulman et al., "Proximal Policy Optimization Algorithms" (2017) | [1707.06347](https://arxiv.org/abs/1707.06347) | KL penalty thresholds, clip fraction monitoring, PPO-specific heuristics |
+| Rafailov et al., "Direct Preference Optimization" (2023) | [2305.18290](https://arxiv.org/abs/2305.18290) | DPO loss at ln(2) detection, margin collapse, logp gap monitoring |
+| Zheng et al., "Secrets of RLHF in Large Language Models Part I: PPO" (2023) | [2307.04964](https://arxiv.org/abs/2307.04964) | Reward variance monitoring, training stability patterns |
+| Gao et al., "Scaling Laws for Reward Model Overoptimization" (2022) | [2210.10760](https://arxiv.org/abs/2210.10760) | Reward overoptimization detection, KL-reward tradeoff monitoring |
+| Hong et al., "ORPO: Monolithic Preference Optimization" (2024) | [2403.07691](https://arxiv.org/abs/2403.07691) | ORPO odds ratio monitoring |
+| DeepSeek, "DeepSeek-R1" (2025) | [2501.12948](https://arxiv.org/abs/2501.12948) | GRPO group reward collapse, advantage explosion |
+| Casper et al., "Open Problems and Fundamental Limitations of RLHF" (2023) | [2307.15217](https://arxiv.org/abs/2307.15217) | Catalog of RLHF failure modes informing heuristic design |
+
+### Reward hacking detection
+
+| Paper | arXiv | PTT feature |
+|-------|-------|-------------|
+| Wen et al., "ODIN: Disentangled Reward Mitigates Hacking in RLHF" (2024) | [2402.07319](https://arxiv.org/abs/2402.07319) | Reward-length correlation detection (`ctx_reward_length_correlation`) |
+| Hu et al., "InfoRM: Information-Theoretic Reward Modeling" (2024) | [2510.13694](https://arxiv.org/abs/2510.13694) | Mahalanobis distance for multivariate reward hacking detection |
+| Singhal et al., "A Long Way to Go: Length Bias in RLHF" (2023) | [2310.03716](https://arxiv.org/abs/2310.03716) | Length bias monitoring in reward heuristics |
+
+### Training stability & entropy
+
+| Paper | arXiv | PTT feature |
+|-------|-------|-------------|
+| Wang et al., "Entropy Ratio Clipping as Soft Global Constraint" (2025) | [2512.05591](https://arxiv.org/abs/2512.05591) | Entropy as stability signal |
+| Shen et al., "M-GRPO: Momentum-Anchored Policy Optimization" (2025) | [2512.13070](https://arxiv.org/abs/2512.13070) | GRPO stability patterns, momentum-based monitoring |
+| Zhou et al., "EntroPIC: Entropy Stabilization with PID Control" (2025) | [2511.15248](https://arxiv.org/abs/2511.15248) | Entropy stability monitoring patterns |
+| Mnih et al., "Asynchronous Methods for Deep RL" (2016) | [1602.01783](https://arxiv.org/abs/1602.01783) | Entropy regularization principles (A3C entropy bonus) |
+| Engstrom et al., "Implementation Matters in Deep Policy Gradients" (2020) | [2005.12729](https://arxiv.org/abs/2005.12729) | Advantage normalization, explained variance monitoring |
+
+### Statistical methods
+
+| Method | Reference | PTT sensor |
+|--------|-----------|------------|
+| CUSUM change-point detection | Page, E.S. (1954). "Continuous inspection schemes." *Biometrika*, 41(1/2), 100-115. | `AnomalyDetector._cusum()` |
+| EWMA control charts | Roberts, S.W. (1959). "Control chart tests based on geometric moving averages." *Technometrics*, 1(3), 239-250. | `AnomalyDetector._ewma_control_check()`, `TrendDetector.ewma_slope` |
+| Mahalanobis distance | Mahalanobis, P.C. (1936). "On the generalized distance in statistics." *Proceedings of the National Institute of Sciences of India*, 2, 49-55. | `AnomalyDetector.mahalanobis_multivariate()` |
+| Spearman rank correlation | Spearman, C. (1904). "The proof and measurement of association between two things." *American Journal of Psychology*, 15(1), 72-101. | `CorrelationTracker.compute_pair()` (non-linear detection) |
+| Pearson correlation | Pearson, K. (1895). "Notes on regression and inheritance." *Proceedings of the Royal Society of London*, 58, 240-242. | `CorrelationTracker.compute_pair()` (linear detection) |
+| F-test for variance | Fisher, R.A. (1925). *Statistical Methods for Research Workers*. Oliver and Boyd. | `AnomalyDetector._variance_shift_check()` |
+| Linear regression | Galton, F. (1886). "Regression towards mediocrity in hereditary stature." *Journal of the Anthropological Institute*, 15, 246-263. | `TrendDetector.analyze_single()` via `scipy.stats.linregress` |
 
 ---
 
